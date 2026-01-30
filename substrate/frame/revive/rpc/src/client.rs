@@ -21,11 +21,12 @@ pub(crate) mod runtime_api;
 pub(crate) mod storage_api;
 
 use crate::{
+	client_trait::ClientT,
 	subxt_client::{self, revive::calls::types::EthTransact, SrcChainConfig},
-	BlockInfoProvider, BlockTag, FeeHistoryProvider, ReceiptProvider, SubxtBlockInfoProvider,
+	BlockInfoProvider, BlockTag, FeeHistoryProvider, ReceiptProvider, ReceiptProviderT, SubxtBlockInfoProvider,
 	TracerType, TransactionInfo,
 };
-use jsonrpsee::types::{error::CALL_EXECUTION_FAILED_CODE, ErrorObjectOwned};
+use jsonrpsee::{core::async_trait, types::{error::CALL_EXECUTION_FAILED_CODE, ErrorObjectOwned}};
 use pallet_revive::{
 	evm::{
 		decode_revert_reason, Block, BlockNumberOrTag, BlockNumberOrTagOrHash, FeeHistoryResult,
@@ -130,6 +131,18 @@ pub enum ClientError {
 	/// Receipt data length mismatch.
 	#[error("Receipt data length mismatch")]
 	ReceiptDataLengthMismatch,
+	/// Runtime API error.
+	#[error("Runtime API error: {0}")]
+	RuntimeApiError(String),
+	/// Metadata decoding failed.
+	#[error("Metadata decoding failed: {0}")]
+	MetadataDecodingFailed(String),
+	/// Extrinsic decoding failed.
+	#[error("Extrinsic decoding failed")]
+	ExtrinsicDecodingFailed,
+	/// Feature not yet implemented.
+	#[error("Not implemented: {0}")]
+	NotImplemented(String),
 }
 const LOG_TARGET: &str = "eth-rpc::client";
 
@@ -163,11 +176,11 @@ impl From<ClientError> for ErrorObjectOwned {
 
 /// A client connect to a node and maintains a cache of the last `CACHE_SIZE` blocks.
 #[derive(Clone)]
-pub struct Client {
+pub struct Client<R: ReceiptProviderT = ReceiptProvider> {
 	api: OnlineClient<SrcChainConfig>,
 	rpc_client: RpcClient,
 	rpc: LegacyRpcMethods<SrcChainConfig>,
-	receipt_provider: ReceiptProvider,
+	receipt_provider: R,
 	block_provider: SubxtBlockInfoProvider,
 	fee_history_provider: FeeHistoryProvider,
 	chain_id: u64,
@@ -228,14 +241,14 @@ pub async fn connect(
 	Ok((api, rpc_client, rpc))
 }
 
-impl Client {
+impl<R: ReceiptProviderT> Client<R> {
 	/// Create a new client instance.
 	pub async fn new(
 		api: OnlineClient<SrcChainConfig>,
 		rpc_client: RpcClient,
 		rpc: LegacyRpcMethods<SrcChainConfig>,
 		block_provider: SubxtBlockInfoProvider,
-		receipt_provider: ReceiptProvider,
+		receipt_provider: R,
 	) -> Result<Self, ClientError> {
 		let (chain_id, max_block_weight, automine) =
 			tokio::try_join!(chain_id(&api), max_block_weight(&api), async {
@@ -809,4 +822,218 @@ impl Client {
 
 fn to_hex(bytes: impl AsRef<[u8]>) -> String {
 	format!("0x{}", hex::encode(bytes.as_ref()))
+}
+
+#[async_trait]
+impl<R: ReceiptProviderT> ClientT for Client<R> {
+	fn create_block_notifier(&mut self) {
+		self.create_block_notifier()
+	}
+
+	fn set_block_notifier(&mut self, notifier: Option<tokio::sync::broadcast::Sender<H256>>) {
+		self.set_block_notifier(notifier)
+	}
+
+	async fn subscribe_and_cache_new_blocks(
+		&self,
+		subscription_type: SubscriptionType,
+	) -> Result<(), ClientError> {
+		self.subscribe_and_cache_new_blocks(subscription_type).await
+	}
+
+	async fn subscribe_and_cache_blocks(
+		&self,
+		index_last_n_blocks: SubstrateBlockNumber,
+	) -> Result<(), ClientError> {
+		self.subscribe_and_cache_blocks(index_last_n_blocks).await
+	}
+
+	async fn block_hash_for_tag(
+		&self,
+		at: BlockNumberOrTagOrHash,
+	) -> Result<SubstrateBlockHash, ClientError> {
+		self.block_hash_for_tag(at).await
+	}
+
+	fn storage_api(&self, block_hash: H256) -> StorageApi {
+		self.storage_api(block_hash)
+	}
+
+	fn runtime_api(&self, block_hash: H256) -> RuntimeApi {
+		self.runtime_api(block_hash)
+	}
+
+	async fn latest_finalized_block(&self) -> Arc<SubstrateBlock> {
+		self.latest_finalized_block().await
+	}
+
+	async fn latest_block(&self) -> Arc<SubstrateBlock> {
+		self.latest_block().await
+	}
+
+	async fn submit(
+		&self,
+		call: subxt::tx::DefaultPayload<EthTransact>,
+	) -> Result<(), ClientError> {
+		self.submit(call).await
+	}
+
+	async fn receipt(&self, tx_hash: &H256) -> Option<ReceiptInfo> {
+		self.receipt(tx_hash).await
+	}
+
+	async fn post_dispatch_weight(&self, tx_hash: &H256) -> Option<Weight> {
+		self.post_dispatch_weight(tx_hash).await
+	}
+
+	async fn sync_state(
+		&self,
+	) -> Result<sc_rpc::system::SyncState<SubstrateBlockNumber>, ClientError> {
+		self.sync_state().await
+	}
+
+	async fn syncing(&self) -> Result<SyncingStatus, ClientError> {
+		self.syncing().await
+	}
+
+	async fn receipt_by_hash_and_index(
+		&self,
+		block_hash: &H256,
+		transaction_index: usize,
+	) -> Option<ReceiptInfo> {
+		self.receipt_by_hash_and_index(block_hash, transaction_index).await
+	}
+
+	async fn signed_tx_by_hash(&self, tx_hash: &H256) -> Option<TransactionSigned> {
+		self.signed_tx_by_hash(tx_hash).await
+	}
+
+	async fn receipts_count_per_block(&self, block_hash: &SubstrateBlockHash) -> Option<usize> {
+		self.receipts_count_per_block(block_hash).await
+	}
+
+	async fn receipt_by_ethereum_hash_and_index(
+		&self,
+		ethereum_hash: &H256,
+		transaction_index: usize,
+	) -> Option<ReceiptInfo> {
+		self.receipt_by_ethereum_hash_and_index(ethereum_hash, transaction_index).await
+	}
+
+	async fn system_health(&self) -> Result<SystemHealth, ClientError> {
+		self.system_health().await
+	}
+
+	async fn block_number(&self) -> Result<SubstrateBlockNumber, ClientError> {
+		self.block_number().await
+	}
+
+	async fn get_block_hash(
+		&self,
+		block_number: SubstrateBlockNumber,
+	) -> Result<Option<SubstrateBlockHash>, ClientError> {
+		self.get_block_hash(block_number).await
+	}
+
+	async fn block_by_number_or_tag(
+		&self,
+		block: &BlockNumberOrTag,
+	) -> Result<Option<Arc<SubstrateBlock>>, ClientError> {
+		self.block_by_number_or_tag(block).await
+	}
+
+	async fn block_by_hash(
+		&self,
+		hash: &SubstrateBlockHash,
+	) -> Result<Option<Arc<SubstrateBlock>>, ClientError> {
+		self.block_by_hash(hash).await
+	}
+
+	async fn resolve_substrate_hash(&self, ethereum_hash: &H256) -> Option<H256> {
+		self.resolve_substrate_hash(ethereum_hash).await
+	}
+
+	async fn resolve_ethereum_hash(&self, substrate_hash: &H256) -> Option<H256> {
+		self.resolve_ethereum_hash(substrate_hash).await
+	}
+
+	async fn block_by_ethereum_hash(
+		&self,
+		ethereum_hash: &H256,
+	) -> Result<Option<Arc<SubstrateBlock>>, ClientError> {
+		self.block_by_ethereum_hash(ethereum_hash).await
+	}
+
+	async fn block_by_number(
+		&self,
+		block_number: SubstrateBlockNumber,
+	) -> Result<Option<Arc<SubstrateBlock>>, ClientError> {
+		self.block_by_number(block_number).await
+	}
+
+	async fn trace_block_by_number(
+		&self,
+		at: BlockNumberOrTag,
+		config: TracerType,
+	) -> Result<Vec<TransactionTrace>, ClientError> {
+		self.trace_block_by_number(at, config).await
+	}
+
+	async fn trace_transaction(
+		&self,
+		transaction_hash: H256,
+		config: TracerType,
+	) -> Result<Trace, ClientError> {
+		self.trace_transaction(transaction_hash, config).await
+	}
+
+	async fn trace_call(
+		&self,
+		transaction: pallet_revive::evm::GenericTransaction,
+		block: BlockNumberOrTagOrHash,
+		config: TracerType,
+	) -> Result<Trace, ClientError> {
+		self.trace_call(transaction, block, config).await
+	}
+
+	async fn evm_block(
+		&self,
+		block: Arc<SubstrateBlock>,
+		hydrated_transactions: bool,
+	) -> Option<Block> {
+		self.evm_block(block, hydrated_transactions).await
+	}
+
+	fn chain_id(&self) -> u64 {
+		self.chain_id()
+	}
+
+	fn max_block_weight(&self) -> Weight {
+		self.max_block_weight()
+	}
+
+	fn block_notifier(&self) -> Option<tokio::sync::broadcast::Sender<H256>> {
+		self.block_notifier()
+	}
+
+	async fn logs(&self, filter: Option<Filter>) -> Result<Vec<Log>, ClientError> {
+		self.logs(filter).await
+	}
+
+	async fn fee_history(
+		&self,
+		block_count: u32,
+		latest_block: BlockNumberOrTag,
+		reward_percentiles: Option<Vec<f64>>,
+	) -> Result<FeeHistoryResult, ClientError> {
+		self.fee_history(block_count, latest_block, reward_percentiles).await
+	}
+
+	fn is_automine(&self) -> bool {
+		self.is_automine()
+	}
+
+	async fn get_automine(&self) -> bool {
+		self.get_automine().await
+	}
 }

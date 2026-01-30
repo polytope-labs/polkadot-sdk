@@ -18,6 +18,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 use client::ClientError;
+use client_trait::ClientT;
 use jsonrpsee::{
 	core::{async_trait, RpcResult},
 	types::{ErrorCode, ErrorObjectOwned},
@@ -29,7 +30,11 @@ use tokio::time::Duration;
 
 pub mod cli;
 pub mod client;
+pub mod client_trait;
 pub mod example;
+pub mod native;
+pub mod receipt_extractor_trait;
+pub mod receipt_provider_trait;
 pub mod subxt_client;
 
 #[cfg(test)]
@@ -40,12 +45,14 @@ pub use block_info_provider::*;
 
 mod receipt_provider;
 pub use receipt_provider::*;
+pub use receipt_provider_trait::*;
 
 mod fee_history_provider;
 pub use fee_history_provider::*;
 
 mod receipt_extractor;
 pub use receipt_extractor::*;
+pub use receipt_extractor_trait::*;
 
 mod apis;
 pub use apis::*;
@@ -53,9 +60,9 @@ pub use apis::*;
 pub const LOG_TARGET: &str = "eth-rpc";
 
 /// An EVM RPC server implementation.
-pub struct EthRpcServerImpl {
+pub struct EthRpcServerImpl<C: ClientT> {
 	/// The client used to interact with the substrate node.
-	client: client::Client,
+	client: C,
 
 	/// The accounts managed by the server.
 	accounts: Vec<Account>,
@@ -64,9 +71,9 @@ pub struct EthRpcServerImpl {
 	allow_unprotected_txs: bool,
 }
 
-impl EthRpcServerImpl {
+impl<C: ClientT> EthRpcServerImpl<C> {
 	/// Creates a new [`EthRpcServerImpl`].
-	pub fn new(client: client::Client) -> Self {
+	pub fn new(client: C) -> Self {
 		Self { client, accounts: vec![], allow_unprotected_txs: false }
 	}
 
@@ -120,7 +127,7 @@ impl From<EthRpcError> for ErrorObjectOwned {
 }
 
 #[async_trait]
-impl EthRpcServer for EthRpcServerImpl {
+impl<C: ClientT> EthRpcServer for EthRpcServerImpl<C> {
 	async fn net_version(&self) -> RpcResult<String> {
 		Ok(self.client.chain_id().to_string())
 	}
@@ -462,7 +469,7 @@ impl EthRpcServer for EthRpcServerImpl {
 	}
 }
 
-impl EthRpcServerImpl {
+impl<C: ClientT> EthRpcServerImpl<C> {
 	async fn get_transaction_by_substrate_block_hash_and_index(
 		&self,
 		substrate_block_hash: H256,

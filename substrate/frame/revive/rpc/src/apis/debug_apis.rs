@@ -14,7 +14,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-use crate::*;
+use crate::{client_trait::ClientT, *};
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 
 /// Debug Ethererum JSON-RPC apis.
@@ -61,12 +61,12 @@ pub trait DebugRpc {
 	async fn get_automine(&self) -> RpcResult<bool>;
 }
 
-pub struct DebugRpcServerImpl {
-	client: client::Client,
+pub struct DebugRpcServerImpl<C: ClientT> {
+	client: C,
 }
 
-impl DebugRpcServerImpl {
-	pub fn new(client: client::Client) -> Self {
+impl<C: ClientT> DebugRpcServerImpl<C> {
+	pub fn new(client: C) -> Self {
 		Self { client }
 	}
 }
@@ -90,7 +90,7 @@ async fn with_timeout<T>(
 }
 
 #[async_trait]
-impl DebugRpcServer for DebugRpcServerImpl {
+impl<C: ClientT> DebugRpcServer for DebugRpcServerImpl<C> {
 	async fn trace_block_by_number(
 		&self,
 		block: BlockNumberOrTag,

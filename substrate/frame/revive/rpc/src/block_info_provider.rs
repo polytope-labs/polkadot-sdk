@@ -28,7 +28,7 @@ use tokio::sync::RwLock;
 
 /// BlockInfoProvider cache and retrieves information about blocks.
 #[async_trait]
-pub trait BlockInfoProvider: Send + Sync {
+pub trait BlockInfoProvider: Send + Sync + Clone + 'static {
 	/// Update the latest block
 	async fn update_latest(&self, block: Arc<SubstrateBlock>, subscription_type: SubscriptionType);
 

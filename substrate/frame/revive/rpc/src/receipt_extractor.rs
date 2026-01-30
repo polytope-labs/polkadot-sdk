@@ -16,6 +16,7 @@
 // limitations under the License.
 use crate::{
 	client::{runtime_api::RuntimeApi, SubstrateBlock, SubstrateBlockNumber},
+	receipt_extractor_trait::ReceiptExtractorT,
 	subxt_client::{
 		revive::{
 			calls::types::EthTransact,
@@ -25,6 +26,8 @@ use crate::{
 	},
 	ClientError, H160, LOG_TARGET,
 };
+
+use jsonrpsee::core::async_trait;
 
 use futures::{stream, StreamExt};
 use pallet_revive::{
@@ -351,5 +354,35 @@ impl ReceiptExtractor {
 		block_number: u64,
 	) -> Option<H256> {
 		(self.fetch_eth_block_hash)(*block_hash, block_number).await
+	}
+}
+
+#[async_trait]
+impl ReceiptExtractorT for ReceiptExtractor {
+	fn is_before_earliest_block(&self, block_number: SubstrateBlockNumber) -> bool {
+		ReceiptExtractor::is_before_earliest_block(self, block_number)
+	}
+
+	async fn extract_from_block(
+		&self,
+		block: &SubstrateBlock,
+	) -> Result<Vec<(TransactionSigned, ReceiptInfo)>, ClientError> {
+		ReceiptExtractor::extract_from_block(self, block).await
+	}
+
+	async fn extract_from_transaction(
+		&self,
+		block: &SubstrateBlock,
+		transaction_index: usize,
+	) -> Result<(TransactionSigned, ReceiptInfo), ClientError> {
+		ReceiptExtractor::extract_from_transaction(self, block, transaction_index).await
+	}
+
+	async fn get_ethereum_block_hash(
+		&self,
+		block_hash: &H256,
+		block_number: u64,
+	) -> Option<H256> {
+		ReceiptExtractor::get_ethereum_block_hash(self, block_hash, block_number).await
 	}
 }

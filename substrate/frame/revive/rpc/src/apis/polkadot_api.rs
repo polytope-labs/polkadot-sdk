@@ -16,7 +16,7 @@
 // limitations under the License.
 //! Polkadot-specific JSON-RPC methods.
 
-use crate::*;
+use crate::{client_trait::ClientT, *};
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use sp_runtime::Weight;
 
@@ -27,18 +27,18 @@ pub trait PolkadotRpc {
 	async fn post_dispatch_weight(&self, transaction_hash: H256) -> RpcResult<Option<Weight>>;
 }
 
-pub struct PolkadotRpcServerImpl {
-	client: client::Client,
+pub struct PolkadotRpcServerImpl<C: ClientT> {
+	client: C,
 }
 
-impl PolkadotRpcServerImpl {
-	pub fn new(client: client::Client) -> Self {
+impl<C: ClientT> PolkadotRpcServerImpl<C> {
+	pub fn new(client: C) -> Self {
 		Self { client }
 	}
 }
 
 #[async_trait]
-impl PolkadotRpcServer for PolkadotRpcServerImpl {
+impl<C: ClientT> PolkadotRpcServer for PolkadotRpcServerImpl<C> {
 	async fn post_dispatch_weight(&self, transaction_hash: H256) -> RpcResult<Option<Weight>> {
 		let weight = self.client.post_dispatch_weight(&transaction_hash).await;
 		Ok(weight)

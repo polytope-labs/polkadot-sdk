@@ -31,11 +31,13 @@ pallet-revive = { workspace = true, default-features = true }
 prometheus-endpoint = { workspace = true, default-features = true }
 rlp = { workspace = true }
 sc-cli = { workspace = true, default-features = true }
+sc-client-api = { workspace = true, default-features = true }
 sc-rpc = { workspace = true, default-features = true }
 sc-rpc-api = { workspace = true, default-features = true }
 sc-service = { workspace = true, default-features = true }
 serde = { workspace = true, default-features = true, features = ["alloc", "derive"] }
 serde_json = { workspace = true }
+sp-api = { workspace = true, default-features = true }
 sp-arithmetic = { workspace = true, default-features = true }
 sp-core = { workspace = true, default-features = true }
 sp-crypto-hashing = { workspace = true }

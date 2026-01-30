@@ -16,9 +16,11 @@
 // limitations under the License.
 use crate::{
 	client::{SubstrateBlock, SubstrateBlockNumber},
+	receipt_provider_trait::ReceiptProviderT,
 	Address, AddressOrAddresses, BlockInfoProvider, BlockNumberOrTag, BlockTag, Bytes, ClientError,
-	FilterTopic, ReceiptExtractor, SubxtBlockInfoProvider,
+	FilterTopic, ReceiptExtractor, ReceiptExtractorT, SubxtBlockInfoProvider,
 };
+use jsonrpsee::core::async_trait;
 use pallet_revive::evm::{Filter, Log, ReceiptInfo, TransactionSigned};
 use sp_core::{H256, U256};
 use sqlx::{query, QueryBuilder, Row, Sqlite, SqlitePool};
@@ -32,13 +34,13 @@ const LOG_TARGET: &str = "eth-rpc::receipt_provider";
 
 /// ReceiptProvider stores transaction receipts and logs in a SQLite database.
 #[derive(Clone)]
-pub struct ReceiptProvider<B: BlockInfoProvider = SubxtBlockInfoProvider> {
+pub struct ReceiptProvider<B: BlockInfoProvider = SubxtBlockInfoProvider, E: ReceiptExtractorT = ReceiptExtractor> {
 	/// The database pool.
 	pool: SqlitePool,
 	/// The block provider used to fetch blocks, and reconstruct receipts.
 	block_provider: B,
 	/// A means to extract receipts from extrinsics.
-	receipt_extractor: ReceiptExtractor,
+	receipt_extractor: E,
 	/// When `Some`, old blocks will be pruned.
 	keep_latest_n_blocks: Option<usize>,
 	/// A Map of the latest block numbers to block hashes.
@@ -77,12 +79,12 @@ impl BlockInfo for SubstrateBlock {
 	}
 }
 
-impl<B: BlockInfoProvider> ReceiptProvider<B> {
+impl<B: BlockInfoProvider, E: ReceiptExtractorT> ReceiptProvider<B, E> {
 	/// Create a new `ReceiptProvider` with the given database URL and block provider.
 	pub async fn new(
 		pool: SqlitePool,
 		block_provider: B,
-		receipt_extractor: ReceiptExtractor,
+		receipt_extractor: E,
 		keep_latest_n_blocks: Option<usize>,
 	) -> Result<Self, sqlx::Error> {
 		sqlx::migrate!().run(&pool).await?;
@@ -603,6 +605,68 @@ impl<B: BlockInfoProvider> ReceiptProvider<B> {
 			.await
 			.ok()?;
 		Some(signed_tx)
+	}
+}
+
+#[async_trait]
+impl<B: BlockInfoProvider, E: ReceiptExtractorT> ReceiptProviderT for ReceiptProvider<B, E> {
+	async fn find_transaction(&self, transaction_hash: &H256) -> Option<(H256, usize)> {
+		ReceiptProvider::find_transaction(self, transaction_hash).await
+	}
+
+	async fn get_substrate_hash(&self, ethereum_block_hash: &H256) -> Option<H256> {
+		ReceiptProvider::get_substrate_hash(self, ethereum_block_hash).await
+	}
+
+	async fn get_ethereum_hash(&self, substrate_block_hash: &H256) -> Option<H256> {
+		ReceiptProvider::get_ethereum_hash(self, substrate_block_hash).await
+	}
+
+	fn is_before_earliest_block(&self, at: &BlockNumberOrTag) -> bool {
+		ReceiptProvider::is_before_earliest_block(self, at)
+	}
+
+	async fn receipts_from_block(
+		&self,
+		block: &SubstrateBlock,
+	) -> Result<Vec<(TransactionSigned, ReceiptInfo)>, ClientError> {
+		ReceiptProvider::receipts_from_block(self, block).await
+	}
+
+	async fn insert_block_receipts(
+		&self,
+		block: &SubstrateBlock,
+		ethereum_hash: &H256,
+	) -> Result<Vec<(TransactionSigned, ReceiptInfo)>, ClientError> {
+		ReceiptProvider::insert_block_receipts(self, block, ethereum_hash).await
+	}
+
+	async fn logs(&self, filter: Option<Filter>) -> anyhow::Result<Vec<Log>> {
+		ReceiptProvider::logs(self, filter).await
+	}
+
+	async fn receipts_count_per_block(&self, block_hash: &H256) -> Option<usize> {
+		ReceiptProvider::receipts_count_per_block(self, block_hash).await
+	}
+
+	async fn block_transaction_hashes(&self, block_hash: &H256) -> Option<HashMap<usize, H256>> {
+		ReceiptProvider::block_transaction_hashes(self, block_hash).await
+	}
+
+	async fn receipt_by_block_hash_and_index(
+		&self,
+		block_hash: &H256,
+		transaction_index: usize,
+	) -> Option<ReceiptInfo> {
+		ReceiptProvider::receipt_by_block_hash_and_index(self, block_hash, transaction_index).await
+	}
+
+	async fn receipt_by_hash(&self, transaction_hash: &H256) -> Option<ReceiptInfo> {
+		ReceiptProvider::receipt_by_hash(self, transaction_hash).await
+	}
+
+	async fn signed_tx_by_hash(&self, transaction_hash: &H256) -> Option<TransactionSigned> {
+		ReceiptProvider::signed_tx_by_hash(self, transaction_hash).await
 	}
 }
 
